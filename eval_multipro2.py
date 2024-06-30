@@ -38,28 +38,12 @@ def save_as_png(array):
     # Convertir a imagen PIL
     return Image.fromarray(array, 'RGB')
 
-def load_ground_truth(info, base_path):
-    # Extrae el nombre del archivo de la información proporcionada
-    img_name = os.path.basename(info)
-    
-    # Construye la ruta del ground truth basándose en el nombre del archivo de imagen
-    gt_name = img_name.replace('imagen_patch_', 'imagen_patchgt_').replace('.tif', '.png')
-    gt_path = os.path.join(base_path, 'annotations/validation', gt_name)
-    
-    if not os.path.exists(gt_path):
-        raise FileNotFoundError(f"Ground truth not found at path: {gt_path}")
-
-    ground_truth = Image.open(gt_path).convert('L')
-    return np.array(ground_truth)
 
 def visualize_result(data, pred, dir_result, base_path):
     (img, seg, info) = data
     img = save_as_png(img)
 
-    # Cargar el ground truth
-    ground_truth = load_ground_truth(info, base_path)
-
-    # segmentation
+    # Colorear la segmentación
     seg_color = colorEncode(seg, colors)
 
     # prediction
@@ -69,16 +53,11 @@ def visualize_result(data, pred, dir_result, base_path):
     if pred_color.shape[0] != img.height or pred_color.shape[1] != img.width:
         pred_color = np.array(Image.fromarray(pred_color).resize((img.width, img.height)))
 
-    # Aplica la máscara negra a los píxeles correspondientes en pred_color
-    pred_color[ground_truth == 0] = 0
-
-    # aggregate images and save
-    im_vis = np.concatenate((np.array(img), seg_color, pred_color), axis=1).astype(np.uint8)
-
+    # Guardar solo la imagen de predicción
     img_name = info.split('/')[-1]
-    Image.fromarray(im_vis).save(os.path.join(dir_result, img_name.replace('.tif', '.png')))
+    Image.fromarray(pred_color).save(os.path.join(dir_result, img_name.replace('.tif', '.png')))
 
-def evaluate(segmentation_module, loader, cfg, gpu_id, result_queue, base_path, log_file):
+def evaluate(segmentation_module, loader, cfg, gpu_id, result_queue, dir_result, base_path):
     segmentation_module.eval()
 
     for batch_data in loader:
@@ -116,11 +95,11 @@ def evaluate(segmentation_module, loader, cfg, gpu_id, result_queue, base_path, 
             visualize_result(
                 (batch_data['img_ori'], seg_label, batch_data['info']),
                 pred,
-                os.path.join(cfg.DIR, 'result'),
+                dir_result,
                 base_path
             )
 
-def worker(cfg, gpu_id, start_idx, end_idx, result_queue, base_path, log_file):
+def worker(cfg, gpu_id, start_idx, end_idx, result_queue, dir_result, base_path):
     torch.cuda.set_device(gpu_id)
 
     # Dataset and Loader
@@ -155,14 +134,9 @@ def worker(cfg, gpu_id, start_idx, end_idx, result_queue, base_path, log_file):
     segmentation_module.cuda()
 
     # Main loop
-    evaluate(segmentation_module, loader_val, cfg, gpu_id, result_queue, base_path, log_file)
+    evaluate(segmentation_module, loader_val, cfg, gpu_id, result_queue, dir_result, base_path)
 
-def main(cfg, gpus):
-    model_name = f"{cfg.MODEL.arch_encoder}-{cfg.MODEL.arch_decoder}"    
-    log_dir = f"/home/jesus/Escritorio/TFG/semantic-segmentationV5/Resultados/Validacion/{model_name}"
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"validacion-{cfg.VAL.checkpoint}.odgt")
-
+def main(cfg, gpus, dir_result, base_path):
     with open(cfg.DATASET.list_val, 'r') as f:
         lines = f.readlines()
         num_files = len(lines)
@@ -177,12 +151,11 @@ def main(cfg, gpus):
 
     result_queue = Queue(500)
     procs = []
-    base_path = 'data/GIDpatches/'  # Define el path correcto
 
     for idx, gpu_id in enumerate(gpus):
         start_idx = idx * num_files_per_gpu
         end_idx = min(start_idx + num_files_per_gpu, num_files)
-        proc = Process(target=worker, args=(cfg, gpu_id, start_idx, end_idx, result_queue, base_path, log_file))
+        proc = Process(target=worker, args=(cfg, gpu_id, start_idx, end_idx, result_queue, dir_result, base_path))
         print('gpu:{}, start_idx:{}, end_idx:{}'.format(gpu_id, start_idx, end_idx))
         proc.start()
         procs.append(proc)
@@ -206,17 +179,10 @@ def main(cfg, gpus):
     iou = intersection_meter.sum / (union_meter.sum + 1e-10)
     for i, _iou in enumerate(iou):
         print('class [{}], IoU: {:.4f}'.format(i, _iou))
-        with open(log_file, 'a') as f:
-            f.write('class [{}], IoU: {:.4f}\n'.format(i, _iou))
-            print('class [{}], IoU: {:.4f}'.format(i, _iou))
 
-
-    with open(log_file, 'a') as f:
-        f.write('[Eval Summary]:\n')
-        f.write('Mean IoU: {:.4f}, Accuracy: {:.2f}%\n'
-            .format(iou.mean(), acc_meter.average()*100))
-        print('Mean IoU: {:.4f}, Accuracy: {:.2f}%'
-            .format(iou.mean(), acc_meter.average()*100))
+    print('[Eval Summary]:')
+    print('Mean IoU: {:.4f}, Accuracy: {:.2f}%'
+          .format(iou.mean(), acc_meter.average()*100))
 
     print('Evaluation Done!')
 
@@ -235,9 +201,19 @@ if __name__ == '__main__':
         type=str,
     )
     parser.add_argument(
-  "--gpus",
+        "--gpus",
         default="0-3",
         help="gpus to use, e.g. 0-3 or 0,1,2,3"
+    )
+    parser.add_argument(
+        "--output_dir",
+        required=True,
+        help="Directory where output images will be saved"
+    )
+    parser.add_argument(
+        "--base_path",
+        required=True,
+        help="Base path for the ground truth images"
     )
     parser.add_argument(
         "opts",
@@ -251,7 +227,7 @@ if __name__ == '__main__':
     cfg.merge_from_list(args.opts)
     # cfg.freeze()
 
-    logger = setup_logger(distributed_rank=0)
+    logger = setup_logger(distributed_rank=0)   # TODO
     logger.info("Loaded configuration file {}".format(args.cfg))
     logger.info("Running with config:\n{}".format(cfg))
 
@@ -261,14 +237,14 @@ if __name__ == '__main__':
     cfg.MODEL.weights_decoder = os.path.join(
         cfg.DIR, 'decoder_' + cfg.VAL.checkpoint)
     assert os.path.exists(cfg.MODEL.weights_encoder) and \
-        os.path.exists(cfg.MODEL.weights_decoder), "checkpoint does not exist!"
+        os.path.exists(cfg.MODEL.weights_decoder), "checkpoint does not exitst!"
 
-    if not os.path.isdir(os.path.join(cfg.DIR, "result")):
-        os.makedirs(os.path.join(cfg.DIR, "result"))
+    if not os.path.isdir(args.output_dir):
+        os.makedirs(args.output_dir)
 
     # Parse gpu ids
     gpus = parse_devices(args.gpus)
     gpus = [x.replace('gpu', '') for x in gpus]
     gpus = [int(x) for x in gpus]
 
-    main(cfg, gpus)
+    main(cfg, gpus, args.output_dir, args.base_path)

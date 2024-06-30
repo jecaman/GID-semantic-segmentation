@@ -1,0 +1,26 @@
+Idx,Ratio,Train,Val,Stuff,Name
+1,,,,,industrial area
+2,,,,,paddy field
+3,,,,,irrigated field
+4,,,,,dry cropland
+5,,,,,garden land
+6,,,,,arbor forest
+7,,,,,shrub forest
+8,,,,,park
+9,,,,,natural meadow
+10,,,,,artificial meadow
+11,,,,,river
+12,,,,,urban residential
+13,,,,,lake
+14,,,,,pond
+15,,,,,fish pond
+16,,,,,snow
+17,,,,,bareland
+18,,,,,rural residential
+19,,,,,stadium
+20,,,,,square
+21,,,,,road
+22,,,,,overpass
+23,,,,,railway station
+24,,,,,airport
+0,,,,,unlabeled
