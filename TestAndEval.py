@@ -9,14 +9,23 @@ from mit_semseg.lib.utils import as_numpy
 import torch
 from mit_semseg.utils import AverageMeter, colorEncode, accuracy, intersectionAndUnion, parse_devices, setup_logger
 from scipy.io import loadmat
+import os
+import shutil
 
+def vaciar_directorio(directorio):
+    for archivo in os.listdir(directorio):
+        ruta_archivo = os.path.join(directorio, archivo)
+        try:
+            if os.path.isfile(ruta_archivo) or os.path.islink(ruta_archivo):
+                os.unlink(ruta_archivo)  # Eliminar archivo o enlace simbólico
+            elif os.path.isdir(ruta_archivo):
+                shutil.rmtree(ruta_archivo)  # Eliminar directorio
+        except Exception as e:
+            print(f'Error al eliminar {ruta_archivo}. Razón: {e}')
 
 colors = loadmat('data/color5.mat')['colors']
 
-def load_full_ground_truth(info, base_path):
-    img_name = os.path.basename(info)
-    gt_name = img_name.replace('.tiff', '_24label.png')
-    gt_path = os.path.join(base_path, gt_name)
+def load_full_ground_truth(gt_path):
     if not os.path.exists(gt_path):
         raise FileNotFoundError(f"Ground truth not found at path: {gt_path}")
     ground_truth = Image.open(gt_path).convert('L')
@@ -227,18 +236,21 @@ def apply_postprocessing_full(inference_img, ground_truth):
     postprocessed_img[ground_truth == 0] = [0, 0, 0]
     return postprocessed_img
 
-def process_and_infer_images(folder_path, test_script_path):
+def process_and_infer_images(folder_path, mask_path, test_script_path):
     image_files = [f for f in os.listdir(folder_path) if f.endswith('.tiff')]
-    odgt_entries = []
-    for image_file in image_files:
-        base_name = image_file[:-5]
-        print("Procesando imagen:", base_name)
-        with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as tmpdir2:
+    with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as tmpdir2:
+        for image_file in image_files:
+            vaciar_directorio(tmpdir)
+            vaciar_directorio(tmpdir2)
+            odgt_entries = []
+            base_name = image_file[:-5]
+            print("Procesando imagen:", base_name)
+        
             # Rutas
             image_path = os.path.join(folder_path, image_file)
-            gt_path = image_path.replace('.tiff', '_24label.png')
+            gt_path = os.path.join(mask_path, image_file).replace('.tiff', '_24label.png')
 
-            # Cargar imagen y ground truth
+                # Cargar imagen y ground truth
             img_tiff, w, h, b = read_tiff(image_path)
             gt_image, w_gt, h_gt = read_png(gt_path)            
             img_patches, gt_patches = cut_into_patches(img_tiff, gt_image, max_size=500)
@@ -255,9 +267,9 @@ def process_and_infer_images(folder_path, test_script_path):
                     "height": 500
                 }
                 odgt_entries.append(entry)
-            
+                
             write_odgt(odgt_entries, os.path.join('data/', 'test.odgt'))
-            subprocess.run(['python3', test_script_path, '--gpu', '0', '--cfg', 'config/GID-resnet50dilated-ppm_deepsup.yaml', '--output_dir', tmpdir, '--base_path', tmpdir2, 'VAL.visualize', 'True'])
+            subprocess.run(['python3', test_script_path, '--gpu', '0', '--cfg', 'config/GID-Test.yaml', '--output_dir', tmpdir, '--base_path', tmpdir2, 'VAL.visualize', 'True'])
 
 
             # Leer y procesar la imagen ground truth
@@ -271,7 +283,7 @@ def process_and_infer_images(folder_path, test_script_path):
             result_patches = [np.array(Image.open(os.path.join(tmpdir, f'patch_{i}.png'))) for i in range(len(img_patches))]
             reconstructed_image = reconstruct_image(result_patches, (h, w, 3), max_size=500)
             output_filename = os.path.join(os.getcwd(), f'reconstructed_{base_name}.png')
-            full_ground_truth = load_full_ground_truth(image_path, folder_path) 
+            full_ground_truth = load_full_ground_truth(gt_path) 
             postprocessed_image = apply_postprocessing_full(reconstructed_image, full_ground_truth)
             save_reconstructed_image_as_png(postprocessed_image, output_filename)
 
@@ -284,7 +296,8 @@ def process_and_infer_images(folder_path, test_script_path):
             save_combined_image(original_image, color_image, postprocessed_image, combined_output_path)
 
 if __name__ == "__main__":
-    folder_path = '/home/jesus/Escritorio/TFG/GID/test2'
+    folder_path = '/home/jesus/Escritorio/TFG/GID/DatasetV5/Test'
+    mask_path = '/home/jesus/Escritorio/TFG/GID/24ClassAnnotations'  # Path to the ground truth mask with 24 classes per pixel
     test_script_path = 'eval_multipro2.py'
-    process_and_infer_images(folder_path, test_script_path)
+    process_and_infer_images(folder_path, mask_path,test_script_path)
     num_classes = 24  # Set this to the number of classes in your dataset

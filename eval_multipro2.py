@@ -60,11 +60,15 @@ def visualize_result(data, pred, dir_result, base_path):
 def evaluate(segmentation_module, loader, cfg, gpu_id, result_queue, dir_result, base_path):
     segmentation_module.eval()
 
+    present_classes = set()
+
     for batch_data in loader:
         # process data
         batch_data = batch_data[0]
         seg_label = as_numpy(batch_data['seg_label'][0])
         img_resized_list = batch_data['img_data']
+
+        present_classes.update(np.unique(seg_label))
 
         with torch.no_grad():
             segSize = (seg_label.shape[0], seg_label.shape[1])
@@ -88,7 +92,7 @@ def evaluate(segmentation_module, loader, cfg, gpu_id, result_queue, dir_result,
         # calculate accuracy and SEND THEM TO MASTER
         acc, pix = accuracy(pred, seg_label)
         intersection, union = intersectionAndUnion(pred, seg_label, cfg.DATASET.num_class)
-        result_queue.put_nowait((acc, pix, intersection, union))
+        result_queue.put_nowait((acc, pix, intersection, union, present_classes))
 
         # visualization
         if cfg.VAL.visualize:
@@ -152,6 +156,8 @@ def main(cfg, gpus, dir_result, base_path):
     result_queue = Queue(500)
     procs = []
 
+    all_present_classes = set()
+
     for idx, gpu_id in enumerate(gpus):
         start_idx = idx * num_files_per_gpu
         end_idx = min(start_idx + num_files_per_gpu, num_files)
@@ -165,10 +171,11 @@ def main(cfg, gpus, dir_result, base_path):
     while processed_counter < num_files:
         if result_queue.empty():
             continue
-        (acc, pix, intersection, union) = result_queue.get()
+        (acc, pix, intersection, union, present_classes) = result_queue.get()
         acc_meter.update(acc, pix)
         intersection_meter.update(intersection)
         union_meter.update(union)
+        all_present_classes.update(present_classes)
         processed_counter += 1
         pbar.update(1)
 
@@ -177,12 +184,17 @@ def main(cfg, gpus, dir_result, base_path):
 
     # summary
     iou = intersection_meter.sum / (union_meter.sum + 1e-10)
-    for i, _iou in enumerate(iou):
+    
+    # Filtrar clases no presentes en el conjunto de datos
+    iou_filtered = [iou[i] for i in all_present_classes if union_meter.sum[i] > 0]
+    
+    for i, _iou in enumerate(iou_filtered):
         print('class [{}], IoU: {:.4f}'.format(i, _iou))
 
+    mean_iou = np.mean(iou_filtered)
     print('[Eval Summary]:')
     print('Mean IoU: {:.4f}, Accuracy: {:.2f}%'
-          .format(iou.mean(), acc_meter.average()*100))
+          .format(mean_iou, acc_meter.average()*100))
 
     print('Evaluation Done!')
 
