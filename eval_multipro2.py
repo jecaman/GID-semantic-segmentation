@@ -186,12 +186,12 @@ def main(cfg, gpus, dir_result, base_path):
     iou = intersection_meter.sum / (union_meter.sum + 1e-10)
     
     # Filtrar clases no presentes en el conjunto de datos
-    iou_filtered = [iou[i] for i in all_present_classes if union_meter.sum[i] > 0]
+    iou_filtered = {cls: iou[cls] for cls in all_present_classes if union_meter.sum[cls] > 0}
     
-    for i, _iou in enumerate(iou_filtered):
-        print('class [{}], IoU: {:.4f}'.format(i, _iou))
+    for cls, _iou in iou_filtered.items():
+        print('class [{}], IoU: {:.4f}'.format(cls + 1, _iou))
 
-    mean_iou = np.mean(iou_filtered)
+    mean_iou = np.mean(list(iou_filtered.values()))
     print('[Eval Summary]:')
     print('Mean IoU: {:.4f}, Accuracy: {:.2f}%'
           .format(mean_iou, acc_meter.average()*100))
