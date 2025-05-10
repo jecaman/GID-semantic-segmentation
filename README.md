@@ -28,5 +28,3 @@ From left to right:
 
 This project is licensed under the **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** license.  
 You are free to use, modify, and share the code for non-commercial purposes, provided you give appropriate credit.
-
-See the [LICENSE](./LICENSE) file for more details.
