@@ -23,3 +23,10 @@ From left to right:
 
 📄 For full technical details and results, see the **`GID-semantic-segmentation.pdf`** document.  
 📘 For installation, usage, or training instructions, go to **Appendix B – User Manual** inside the PDF.
+
+## 📄 License
+
+This project is licensed under the **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** license.  
+You are free to use, modify, and share the code for non-commercial purposes, provided you give appropriate credit.
+
+See the [LICENSE](./LICENSE) file for more details.
