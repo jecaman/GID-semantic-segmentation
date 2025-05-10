@@ -1,6 +1,6 @@
 ## 📚 Project Overview
 
-This project focuses on applying **semantic segmentation** to **multispectral remote sensing images** using **deep learning techniques with PyTorch**.
+This project was developed as part of my Bachelor’s Thesis (TFG) and focuses on applying **semantic segmentation** to **multispectral remote sensing images** using **deep learning techniques with PyTorch**.
 
 Multispectral images contain information beyond the visible RGB spectrum, capturing additional bands that provide more accurate insight into the characteristics of observed objects.  
 In this work, several **deep neural network architectures**—originally designed for RGB inputs—have been successfully adapted to handle these more complex multispectral formats.
